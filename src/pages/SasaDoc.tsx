@@ -54,9 +54,9 @@ const SasaDoc = () => {
       color: 'bg-blue-500',
       features: [
         'Real-time availability',
-        'Secure messaging',
+        'Specialist matching',
         'Appointment reminders',
-        'Professional matching'
+        'Professional profiles'
       ]
     }
   ];

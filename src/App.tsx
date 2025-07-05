@@ -9,6 +9,9 @@ import Index from "./pages/Index";
 import About from "./pages/About";
 import Profile from "./pages/Profile";
 import SasaDoc from "./pages/SasaDoc";
+import SymptomsChecker from "./pages/SymptomsChecker";
+import SelfCareGuide from "./pages/SelfCareGuide";
+import AppointmentBooking from "./pages/AppointmentBooking";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -26,6 +29,9 @@ const App = () => (
             <Route path="/about" element={<About />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/sasadoc" element={<SasaDoc />} />
+            <Route path="/sasadoc/symptoms-checker" element={<SymptomsChecker />} />
+            <Route path="/sasadoc/self-care" element={<SelfCareGuide />} />
+            <Route path="/sasadoc/appointment-booking" element={<AppointmentBooking />} />
             <Route path="/auth" element={<Auth />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
