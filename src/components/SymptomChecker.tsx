@@ -4,11 +4,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, AlertTriangle, Heart, Calendar, Stethoscope } from 'lucide-react';
+import { Loader2, AlertTriangle, Heart, Calendar, Stethoscope, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import VoiceChat from './VoiceChat';
 import WeatherWidget from './WeatherWidget';
+import SpecialistFinder from './SpecialistFinder';
 
 interface AnalysisResult {
   possibleConditions: Array<{
@@ -27,6 +28,7 @@ const SymptomChecker = () => {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showSpecialistFinder, setShowSpecialistFinder] = useState(false);
   const { user } = useAuth();
 
   const handleAnalyze = async () => {
@@ -58,6 +60,10 @@ const SymptomChecker = () => {
     setSymptoms(transcribedText);
   };
 
+  const handleFindSpecialists = () => {
+    setShowSpecialistFinder(true);
+  };
+
   const getUrgencyColor = (level: string) => {
     switch (level) {
       case 'immediate': return 'bg-red-500';
@@ -75,6 +81,17 @@ const SymptomChecker = () => {
       default: return 'bg-gray-100 text-gray-800';
     }
   };
+
+  if (showSpecialistFinder && analysis) {
+    return (
+      <SpecialistFinder 
+        recommendedSpecialty={analysis.recommendedSpecialty}
+        symptoms={symptoms}
+        analysis={analysis}
+        onBack={() => setShowSpecialistFinder(false)}
+      />
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto grid lg:grid-cols-4 gap-6">
@@ -190,11 +207,11 @@ const SymptomChecker = () => {
               </CardContent>
             </Card>
 
-            {/* Recommended Specialty */}
+            {/* Recommended Specialist */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-blue-500" />
+                  <Users className="w-5 h-5 text-blue-500" />
                   Recommended Specialist
                 </CardTitle>
               </CardHeader>
@@ -204,7 +221,11 @@ const SymptomChecker = () => {
                     <p className="font-medium">{analysis.recommendedSpecialty}</p>
                     <p className="text-sm text-gray-600">Consider booking an appointment with this specialist</p>
                   </div>
-                  <Button className="medical-gradient text-white">
+                  <Button 
+                    onClick={handleFindSpecialists}
+                    className="medical-gradient text-white"
+                  >
+                    <Users className="w-4 h-4 mr-2" />
                     Find Specialists
                   </Button>
                 </div>

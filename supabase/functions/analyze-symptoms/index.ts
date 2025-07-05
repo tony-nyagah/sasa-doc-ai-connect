@@ -6,6 +6,48 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Specialty mapping for better AI recommendations
+const specialtyMapping = {
+  'heart': 'Cardiology',
+  'cardiac': 'Cardiology',
+  'chest pain': 'Cardiology',
+  'blood pressure': 'Cardiology',
+  'skin': 'Dermatology',
+  'rash': 'Dermatology',
+  'acne': 'Dermatology',
+  'eczema': 'Dermatology',
+  'brain': 'Neurology',
+  'headache': 'Neurology',
+  'migraine': 'Neurology',
+  'seizure': 'Neurology',
+  'mental': 'Psychiatry',
+  'depression': 'Psychiatry',
+  'anxiety': 'Psychiatry',
+  'stress': 'Psychiatry',
+  'bone': 'Orthopedics',
+  'joint': 'Orthopedics',
+  'fracture': 'Orthopedics',
+  'arthritis': 'Orthopedics',
+  'child': 'Pediatrics',
+  'infant': 'Pediatrics',
+  'baby': 'Pediatrics',
+  'pregnancy': 'Gynecology',
+  'menstrual': 'Gynecology',
+  'reproductive': 'Gynecology'
+};
+
+function getRecommendedSpecialty(symptoms: string): string {
+  const lowerSymptoms = symptoms.toLowerCase();
+  
+  for (const [keyword, specialty] of Object.entries(specialtyMapping)) {
+    if (lowerSymptoms.includes(keyword)) {
+      return specialty;
+    }
+  }
+  
+  return 'General Medicine';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -19,15 +61,30 @@ serve(async (req) => {
       throw new Error('Mistral API key not configured');
     }
 
+    // Get AI-recommended specialty
+    const aiRecommendedSpecialty = getRecommendedSpecialty(symptoms);
+
     const systemPrompt = `You are a medical AI assistant helping ${userType}s analyze symptoms. 
 
 IMPORTANT: You MUST respond with valid JSON only. Do not include any text before or after the JSON.
+
+Based on the symptoms provided, recommend the most appropriate medical specialty from this list:
+- General Medicine
+- Cardiology  
+- Dermatology
+- Pediatrics
+- Orthopedics
+- Neurology
+- Psychiatry
+- Gynecology
+
+Consider the symptoms carefully and match them to the most relevant specialty. If unsure, default to "General Medicine".
 
 Provide a JSON response with these exact keys:
 - possibleConditions: array of {condition, likelihood, description} where likelihood is "high", "medium", or "low"
 - selfCareRecommendations: array of practical advice strings
 - urgencyLevel: one of "immediate", "within_24_hours", "within_week", or "routine"
-- recommendedSpecialty: string matching medical specialties like "General Medicine", "Cardiology", etc.
+- recommendedSpecialty: string matching one of the specialties listed above
 - disclaimer: medical disclaimer text
 
 Example format:
@@ -53,7 +110,7 @@ Be thorough but not alarming. Always recommend consulting healthcare professiona
         model: 'mistral-large-latest',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Analyze these symptoms: ${symptoms}` }
+          { role: 'user', content: `Analyze these symptoms and recommend the appropriate medical specialty: ${symptoms}` }
         ],
         temperature: 0.3,
         max_tokens: 2000,
@@ -84,19 +141,19 @@ Be thorough but not alarming. Always recommend consulting healthcare professiona
         throw new Error('Invalid response structure');
       }
       
-      // Ensure all required fields exist
+      // Ensure all required fields exist and use fallback specialty if needed
       parsedAnalysis = {
         possibleConditions: parsedAnalysis.possibleConditions || [],
         selfCareRecommendations: parsedAnalysis.selfCareRecommendations || [],
         urgencyLevel: parsedAnalysis.urgencyLevel || "routine",
-        recommendedSpecialty: parsedAnalysis.recommendedSpecialty || "General Medicine",
+        recommendedSpecialty: parsedAnalysis.recommendedSpecialty || aiRecommendedSpecialty,
         disclaimer: parsedAnalysis.disclaimer || "This analysis is for informational purposes only and should not replace professional medical advice."
       };
       
     } catch (parseError) {
       console.error('JSON parsing failed:', parseError, 'Raw response:', analysis);
       
-      // Create a structured fallback response
+      // Create a structured fallback response with intelligent specialty recommendation
       parsedAnalysis = {
         possibleConditions: [
           {
@@ -111,7 +168,7 @@ Be thorough but not alarming. Always recommend consulting healthcare professiona
           "Consult with a healthcare professional for proper evaluation"
         ],
         urgencyLevel: "within_week",
-        recommendedSpecialty: "General Medicine",
+        recommendedSpecialty: aiRecommendedSpecialty,
         disclaimer: "This analysis is for informational purposes only and should not replace professional medical advice. Please consult with a healthcare professional for proper diagnosis and treatment."
       };
     }
