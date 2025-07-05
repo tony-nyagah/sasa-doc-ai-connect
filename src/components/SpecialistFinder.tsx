@@ -52,7 +52,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [filteredDoctors, setFilteredDoctors] = useState<Doctor[]>([]);
-  const [selectedSpecialty, setSelectedSpecialty] = useState<string>('');
+  const [selectedSpecialty, setSelectedSpecialty] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [experienceFilter, setExperienceFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
@@ -118,7 +118,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
     let filtered = [...doctors];
 
     // Filter by specialty
-    if (selectedSpecialty) {
+    if (selectedSpecialty && selectedSpecialty !== 'all') {
       filtered = filtered.filter(doctor => doctor.specialty_id === selectedSpecialty);
     }
 
@@ -234,7 +234,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
                   <SelectValue placeholder="All specialties" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Specialties</SelectItem>
+                  <SelectItem value="all">All Specialties</SelectItem>
                   {specialties.map((specialty) => (
                     <SelectItem key={specialty.id} value={specialty.id}>
                       {specialty.name}
@@ -267,7 +267,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
       <div className="flex items-center justify-between">
         <p className="text-gray-600">
           Found {filteredDoctors.length} specialist{filteredDoctors.length !== 1 ? 's' : ''}
-          {selectedSpecialty && specialties.find(s => s.id === selectedSpecialty) && 
+          {selectedSpecialty && selectedSpecialty !== 'all' && specialties.find(s => s.id === selectedSpecialty) && 
             ` in ${specialties.find(s => s.id === selectedSpecialty)?.name}`
           }
         </p>
@@ -284,7 +284,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
             </p>
             <Button 
               onClick={() => {
-                setSelectedSpecialty('');
+                setSelectedSpecialty('all');
                 setSearchTerm('');
                 setExperienceFilter('all');
               }}

@@ -1,12 +1,9 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -16,7 +13,15 @@ serve(async (req) => {
     
     if (!hfToken) {
       console.error('HF_TOKEN not found in environment variables');
-      throw new Error('Hugging Face token not configured');
+      return new Response(JSON.stringify({ 
+        error: 'Speech recognition is currently unavailable. Please type your message instead.',
+        transcript: '',
+        success: false,
+        isConfigurationError: true
+      }), {
+        status: 200, // Return 200 to avoid triggering client-side error handling
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     console.log('Processing audio transcription request...');
@@ -25,7 +30,14 @@ serve(async (req) => {
     const audioFile = formData.get('audio') as File;
     
     if (!audioFile) {
-      throw new Error('No audio file provided');
+      return new Response(JSON.stringify({ 
+        error: 'No audio file provided',
+        transcript: '',
+        success: false 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     console.log('Audio file details:', {
@@ -106,15 +118,16 @@ serve(async (req) => {
       }
     }
     
-    // If all models failed, return a fallback response
+    // If all models failed, return a user-friendly response
     console.log('All models failed, using fallback');
     return new Response(JSON.stringify({ 
       transcript: '',
       success: false,
-      error: 'Speech recognition temporarily unavailable. Please try typing your message instead.',
-      isLoading: true,
+      error: 'Speech recognition is temporarily unavailable. Please try typing your message instead.',
+      isTemporaryError: true,
       lastError
     }), {
+      status: 200, // Return 200 to avoid triggering client-side error handling
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
@@ -122,11 +135,12 @@ serve(async (req) => {
     console.error('Error in transcribe-audio function:', error);
     
     return new Response(JSON.stringify({ 
-      error: error.message,
+      error: 'An unexpected error occurred. Please try typing your message instead.',
       transcript: '',
-      success: false 
+      success: false,
+      isUnexpectedError: true
     }), {
-      status: 500,
+      status: 200, // Return 200 to avoid triggering client-side error handling
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
