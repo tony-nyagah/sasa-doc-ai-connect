@@ -19,7 +19,7 @@ serve(async (req) => {
       throw new Error('Hugging Face token not configured');
     }
 
-    console.log('HF Token configured successfully');
+    console.log('Processing audio transcription request...');
 
     const formData = await req.formData();
     const audioFile = formData.get('audio') as File;
@@ -28,66 +28,92 @@ serve(async (req) => {
       throw new Error('No audio file provided');
     }
 
-    console.log('Audio file received:', audioFile.name, audioFile.size, 'bytes');
+    console.log('Audio file details:', {
+      name: audioFile.name,
+      size: audioFile.size,
+      type: audioFile.type
+    });
 
-    // Convert audio file to ArrayBuffer for processing
-    const audioBuffer = await audioFile.arrayBuffer();
+    // Convert audio to proper format for Whisper
+    const audioArrayBuffer = await audioFile.arrayBuffer();
     
-    // Use Hugging Face Automatic Speech Recognition API
-    const response = await fetch(
-      "https://api-inference.huggingface.co/models/openai/whisper-large-v3",
-      {
-        headers: {
-          Authorization: `Bearer ${hfToken}`,
-          "Content-Type": "application/octet-stream",
-        },
-        method: "POST",
-        body: audioBuffer,
-      }
-    );
+    // Try multiple Whisper models for better reliability
+    const models = [
+      "openai/whisper-base",
+      "openai/whisper-small", 
+      "openai/whisper-tiny"
+    ];
+    
+    let lastError = null;
+    
+    for (const model of models) {
+      try {
+        console.log(`Trying model: ${model}`);
+        
+        const response = await fetch(
+          `https://api-inference.huggingface.co/models/${model}`,
+          {
+            headers: {
+              Authorization: `Bearer ${hfToken}`,
+              "Content-Type": "audio/wav",
+            },
+            method: "POST",
+            body: audioArrayBuffer,
+          }
+        );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Hugging Face API error:', response.status, errorText);
-      
-      // If model is loading, return a helpful message
-      if (response.status === 503) {
-        return new Response(JSON.stringify({ 
-          transcript: '',
-          success: false,
-          error: 'Speech recognition model is loading. Please try again in a few moments.',
-          isLoading: true
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        if (response.ok) {
+          const result = await response.json();
+          console.log('Transcription result:', result);
+          
+          let transcript = '';
+          if (result && typeof result === 'object') {
+            if (result.text) {
+              transcript = result.text;
+            } else if (Array.isArray(result) && result.length > 0) {
+              transcript = result[0].text || result[0];
+            }
+          } else if (typeof result === 'string') {
+            transcript = result;
+          }
+          
+          transcript = transcript.trim();
+          
+          if (transcript) {
+            console.log('Successfully transcribed:', transcript);
+            return new Response(JSON.stringify({ 
+              transcript,
+              success: true,
+              model: model
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        } else {
+          const errorText = await response.text();
+          console.log(`Model ${model} failed:`, response.status, errorText);
+          lastError = `${model}: ${response.status} - ${errorText}`;
+          
+          if (response.status === 503) {
+            // Model is loading, try next one
+            continue;
+          }
+        }
+      } catch (modelError) {
+        console.log(`Error with model ${model}:`, modelError);
+        lastError = `${model}: ${modelError.message}`;
+        continue;
       }
-      
-      throw new Error(`Hugging Face API error: ${response.status} - ${errorText}`);
     }
-
-    const data = await response.json();
-    console.log('HF API response:', data);
     
-    // Extract transcript from HF response
-    let transcript = '';
-    if (data && typeof data === 'object') {
-      if (data.text) {
-        transcript = data.text;
-      } else if (Array.isArray(data) && data.length > 0 && data[0].text) {
-        transcript = data[0].text;
-      } else if (typeof data === 'string') {
-        transcript = data;
-      }
-    }
-    
-    // Clean up the transcript
-    transcript = transcript.trim();
-    
-    console.log('Extracted transcript:', transcript);
-    
+    // If all models failed, return a fallback response
+    console.log('All models failed, using fallback');
     return new Response(JSON.stringify({ 
-      transcript: transcript || '',
-      success: true 
+      transcript: '',
+      success: false,
+      error: 'Speech recognition temporarily unavailable. Please try typing your message instead.',
+      isLoading: true,
+      lastError
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Mic, MicOff, Volume2, Loader2, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, Volume2, Loader2, AlertCircle, Keyboard } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -22,18 +22,23 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
-          sampleRate: 16000,
+          sampleRate: 44100,
           channelCount: 1,
           echoCancellation: true,
-          noiseSuppression: true
+          noiseSuppression: true,
+          autoGainControl: true
         } 
       });
       
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
-          ? 'audio/webm;codecs=opus' 
-          : 'audio/webm'
-      });
+      // Use a more compatible format
+      let mimeType = 'audio/webm';
+      if (MediaRecorder.isTypeSupported('audio/wav')) {
+        mimeType = 'audio/wav';
+      } else if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      }
+      
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
@@ -45,20 +50,26 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { 
-          type: mediaRecorder.mimeType 
-        });
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         await processAudio(audioBlob);
         stream.getTracks().forEach(track => track.stop());
       };
 
-      mediaRecorder.start(1000); // Collect data every second
+      mediaRecorder.start();
       setIsRecording(true);
       
       toast({
         title: "Recording started",
-        description: "Speak clearly into your microphone. Click stop when finished.",
+        description: "Speak clearly. Recording will stop automatically after 10 seconds or click stop.",
       });
+
+      // Auto-stop after 10 seconds
+      setTimeout(() => {
+        if (mediaRecorderRef.current && isRecording) {
+          stopRecording();
+        }
+      }, 10000);
+      
     } catch (error) {
       console.error('Microphone access error:', error);
       toast({
@@ -79,11 +90,15 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
 
   const processAudio = async (audioBlob: Blob) => {
     try {
-      console.log('Processing audio blob:', audioBlob.size, 'bytes');
+      console.log('Processing audio blob:', audioBlob.size, 'bytes', audioBlob.type);
       
-      // Convert to a format that works better with the API
+      // Check if audio is too small
+      if (audioBlob.size < 1000) {
+        throw new Error('Audio recording too short. Please speak for at least 2 seconds.');
+      }
+      
       const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.webm');
+      formData.append('audio', audioBlob, 'recording.wav');
 
       const { data, error } = await supabase.functions.invoke('transcribe-audio', {
         body: formData,
@@ -100,32 +115,39 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
         setIsModelLoading(true);
         toast({
           title: "Model Loading",
-          description: "The speech recognition model is starting up. Please try again in a moment.",
-          variant: "destructive"
+          description: "Speech recognition is starting up. Please try again in a moment.",
         });
         return;
       }
 
       if (data && data.success && data.transcript) {
         const transcribedText = data.transcript.trim();
-        setTranscript(transcribedText);
-        onTranscription?.(transcribedText);
-        setIsModelLoading(false);
+        if (transcribedText.length > 0) {
+          setTranscript(transcribedText);
+          onTranscription?.(transcribedText);
+          setIsModelLoading(false);
 
-        toast({
-          title: "Voice processed successfully",
-          description: "Your speech has been transcribed.",
-        });
+          toast({
+            title: "Voice processed successfully",
+            description: `Transcribed: "${transcribedText.substring(0, 50)}${transcribedText.length > 50 ? '...' : ''}"`,
+          });
+        } else {
+          throw new Error('No speech detected. Please try speaking more clearly.');
+        }
       } else {
-        throw new Error(data?.error || 'No transcript received');
+        throw new Error(data?.error || 'Could not process speech. Please try typing instead.');
       }
     } catch (error) {
       console.error('Audio processing error:', error);
       setIsModelLoading(false);
       
-      let errorMessage = "Failed to process audio. Please try again.";
-      if (error.message?.includes('model is loading')) {
-        errorMessage = "Speech recognition model is loading. Please wait a moment and try again.";
+      let errorMessage = "Failed to process audio. Please try again or use the text input.";
+      if (error.message?.includes('too short')) {
+        errorMessage = "Recording too short. Please speak for at least 2 seconds.";
+      } else if (error.message?.includes('No speech detected')) {
+        errorMessage = "No speech detected. Please speak more clearly and try again.";
+      } else if (error.message?.includes('loading')) {
+        errorMessage = "Speech recognition is loading. Please wait and try again.";
         setIsModelLoading(true);
       }
       
@@ -141,7 +163,6 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
 
   const speakText = (text: string) => {
     if ('speechSynthesis' in window) {
-      // Stop any ongoing speech
       speechSynthesis.cancel();
       
       const utterance = new SpeechSynthesisUtterance(text);
@@ -241,12 +262,19 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
         )}
 
         <div className="text-xs text-gray-500 space-y-1">
-          <p>• Click to start recording your symptoms or questions</p>
-          <p>• Speak clearly for 3-10 seconds for best results</p>
-          <p>• The AI will transcribe and analyze your voice</p>
+          <p>• Click to start recording (auto-stops after 10 seconds)</p>
+          <p>• Speak clearly and loudly for best results</p>
+          <p>• If voice doesn't work, you can type your symptoms instead</p>
           {isModelLoading && (
             <p className="text-yellow-600">• Speech model is initializing, please wait...</p>
           )}
+        </div>
+
+        <div className="pt-2 border-t">
+          <p className="text-xs text-gray-400 flex items-center">
+            <Keyboard className="w-3 h-3 mr-1" />
+            Having trouble with voice? You can type your symptoms in the text area above.
+          </p>
         </div>
       </CardContent>
     </Card>
