@@ -342,7 +342,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
                   <SelectValue placeholder="All specialties" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Specialties</SelectItem>
+                  <SelectItem value="all">All Specialties</SelectItem>
                   {specialties.map((specialty) => (
                     <SelectItem key={specialty.id} value={specialty.id}>
                       {specialty.name}
@@ -425,7 +425,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
             </p>
             <Button 
               onClick={() => {
-                setSelectedSpecialty('');
+                setSelectedSpecialty('all');
                 setSearchTerm('');
                 setExperienceFilter('all');
                 setMaxDistance('100');
