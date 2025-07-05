@@ -15,8 +15,11 @@ serve(async (req) => {
     const hfToken = Deno.env.get('HF_TOKEN');
     
     if (!hfToken) {
+      console.error('HF_TOKEN not found in environment variables');
       throw new Error('Hugging Face token not configured');
     }
+
+    console.log('HF Token configured successfully');
 
     const formData = await req.formData();
     const audioFile = formData.get('audio') as File;
@@ -25,51 +28,62 @@ serve(async (req) => {
       throw new Error('No audio file provided');
     }
 
-    // Convert audio file to base64 or binary data for HF API
-    const audioBuffer = await audioFile.arrayBuffer();
-    const audioArray = new Uint8Array(audioBuffer);
+    console.log('Audio file received:', audioFile.name, audioFile.size, 'bytes');
 
-    // Use Hugging Face Whisper API
+    // Convert audio file to ArrayBuffer for processing
+    const audioBuffer = await audioFile.arrayBuffer();
+    
+    // Use Hugging Face Automatic Speech Recognition API
     const response = await fetch(
-      "https://router.huggingface.co/fal-ai/fal-ai/whisper",
+      "https://api-inference.huggingface.co/models/openai/whisper-large-v3",
       {
         headers: {
           Authorization: `Bearer ${hfToken}`,
-          "Content-Type": "application/json",
+          "Content-Type": "application/octet-stream",
         },
         method: "POST",
-        body: JSON.stringify({
-          inputs: Array.from(audioArray), // Convert to array for JSON serialization
-          parameters: {
-            language: "en",
-            task: "transcribe"
-          }
-        }),
+        body: audioBuffer,
       }
     );
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Hugging Face API error:', response.status, errorText);
-      throw new Error(`Hugging Face API error: ${response.status}`);
+      
+      // If model is loading, return a helpful message
+      if (response.status === 503) {
+        return new Response(JSON.stringify({ 
+          transcript: '',
+          success: false,
+          error: 'Speech recognition model is loading. Please try again in a few moments.',
+          isLoading: true
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      throw new Error(`Hugging Face API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('HF API response:', data);
     
     // Extract transcript from HF response
     let transcript = '';
     if (data && typeof data === 'object') {
-      // Handle different possible response formats from HF
       if (data.text) {
         transcript = data.text;
-      } else if (data.transcription) {
-        transcript = data.transcription;
       } else if (Array.isArray(data) && data.length > 0 && data[0].text) {
         transcript = data[0].text;
       } else if (typeof data === 'string') {
         transcript = data;
       }
     }
+    
+    // Clean up the transcript
+    transcript = transcript.trim();
+    
+    console.log('Extracted transcript:', transcript);
     
     return new Response(JSON.stringify({ 
       transcript: transcript || '',
