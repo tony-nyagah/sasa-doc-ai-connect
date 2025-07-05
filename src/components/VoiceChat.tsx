@@ -19,8 +19,19 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true
+        } 
+      });
+      
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -31,14 +42,20 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         await processAudio(audioBlob);
         stream.getTracks().forEach(track => track.stop());
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(1000); // Collect data every second
       setIsRecording(true);
+      
+      toast({
+        title: "Recording started",
+        description: "Speak clearly into your microphone.",
+      });
     } catch (error) {
+      console.error('Microphone access error:', error);
       toast({
         title: "Error",
         description: "Could not access microphone. Please check permissions.",
@@ -57,24 +74,33 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
 
   const processAudio = async (audioBlob: Blob) => {
     try {
+      // Convert to WAV format for better compatibility
       const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.wav');
+      formData.append('audio', audioBlob, 'recording.webm');
 
       const { data, error } = await supabase.functions.invoke('transcribe-audio', {
         body: formData,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Transcription error:', error);
+        throw error;
+      }
 
-      const transcribedText = data.transcript;
-      setTranscript(transcribedText);
-      onTranscription?.(transcribedText);
+      if (data && data.success && data.transcript) {
+        const transcribedText = data.transcript.trim();
+        setTranscript(transcribedText);
+        onTranscription?.(transcribedText);
 
-      toast({
-        title: "Voice processed",
-        description: "Your voice has been transcribed successfully.",
-      });
+        toast({
+          title: "Voice processed",
+          description: "Your voice has been transcribed successfully.",
+        });
+      } else {
+        throw new Error('No transcript received');
+      }
     } catch (error) {
+      console.error('Audio processing error:', error);
       toast({
         title: "Error",
         description: "Failed to process audio. Please try again.",
@@ -87,11 +113,27 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
 
   const speakText = (text: string) => {
     if ('speechSynthesis' in window) {
+      // Stop any ongoing speech
+      speechSynthesis.cancel();
+      
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 0.8;
       utterance.pitch = 1;
       utterance.volume = 0.8;
+      utterance.lang = 'en-US';
+      
       speechSynthesis.speak(utterance);
+      
+      toast({
+        title: "Speaking",
+        description: "Playing audio response.",
+      });
+    } else {
+      toast({
+        title: "Not supported",
+        description: "Text-to-speech is not supported in this browser.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -108,7 +150,11 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
           <Button
             onClick={isRecording ? stopRecording : startRecording}
             disabled={isProcessing}
-            className={`flex-1 ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'medical-gradient hover:opacity-90'}`}
+            className={`flex-1 ${
+              isRecording 
+                ? 'bg-red-500 hover:bg-red-600 text-white' 
+                : 'medical-gradient hover:opacity-90 text-white'
+            }`}
           >
             {isProcessing ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -124,7 +170,8 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
             <Button
               onClick={() => speakText(transcript)}
               variant="outline"
-              className="border-medical-primary text-medical-primary"
+              className="border-medical-primary text-medical-primary hover:bg-medical-secondary"
+              title="Play transcript"
             >
               <Volume2 className="w-4 h-4" />
             </Button>
@@ -139,8 +186,10 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
           </div>
         )}
 
-        <div className="text-xs text-gray-500">
-          Click to start recording your symptoms or questions. The AI will transcribe and analyze your voice.
+        <div className="text-xs text-gray-500 space-y-1">
+          <p>• Click to start recording your symptoms or questions</p>
+          <p>• Speak clearly for 3-10 seconds for best results</p>
+          <p>• The AI will transcribe and analyze your voice</p>
         </div>
       </CardContent>
     </Card>

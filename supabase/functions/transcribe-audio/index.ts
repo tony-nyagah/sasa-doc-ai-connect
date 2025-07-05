@@ -12,10 +12,10 @@ serve(async (req) => {
   }
 
   try {
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    const hfToken = Deno.env.get('HF_TOKEN');
     
-    if (!openaiApiKey) {
-      throw new Error('OpenAI API key not configured');
+    if (!hfToken) {
+      throw new Error('Hugging Face token not configured');
     }
 
     const formData = await req.formData();
@@ -25,31 +25,54 @@ serve(async (req) => {
       throw new Error('No audio file provided');
     }
 
-    // Create a new FormData for the OpenAI API
-    const openaiFormData = new FormData();
-    openaiFormData.append('file', audioFile, 'audio.wav');
-    openaiFormData.append('model', 'whisper-1');
-    openaiFormData.append('language', 'en');
-    openaiFormData.append('response_format', 'json');
+    // Convert audio file to base64 or binary data for HF API
+    const audioBuffer = await audioFile.arrayBuffer();
+    const audioArray = new Uint8Array(audioBuffer);
 
-    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-      },
-      body: openaiFormData,
-    });
+    // Use Hugging Face Whisper API
+    const response = await fetch(
+      "https://router.huggingface.co/fal-ai/fal-ai/whisper",
+      {
+        headers: {
+          Authorization: `Bearer ${hfToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+        body: JSON.stringify({
+          inputs: Array.from(audioArray), // Convert to array for JSON serialization
+          parameters: {
+            language: "en",
+            task: "transcribe"
+          }
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('OpenAI API error:', response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      console.error('Hugging Face API error:', response.status, errorText);
+      throw new Error(`Hugging Face API error: ${response.status}`);
     }
 
     const data = await response.json();
     
+    // Extract transcript from HF response
+    let transcript = '';
+    if (data && typeof data === 'object') {
+      // Handle different possible response formats from HF
+      if (data.text) {
+        transcript = data.text;
+      } else if (data.transcription) {
+        transcript = data.transcription;
+      } else if (Array.isArray(data) && data.length > 0 && data[0].text) {
+        transcript = data[0].text;
+      } else if (typeof data === 'string') {
+        transcript = data;
+      }
+    }
+    
     return new Response(JSON.stringify({ 
-      transcript: data.text || '',
+      transcript: transcript || '',
       success: true 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
