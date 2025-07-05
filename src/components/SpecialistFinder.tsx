@@ -14,16 +14,26 @@ import {
   Filter,
   Clock,
   Award,
-  Stethoscope
+  Stethoscope,
+  Navigation
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useLocationService } from '@/hooks/useLocationService';
+import LocationPicker from './LocationPicker';
 
 interface Doctor {
   id: string;
   user_id: string;
   license_number: string;
   years_of_experience: number;
+  specialty_id: string;
+  city: string;
+  state: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  address: string;
   specialty: {
     name: string;
     description: string;
@@ -33,12 +43,22 @@ interface Doctor {
     last_name: string;
     email: string;
   };
+  distance?: number;
 }
 
 interface Specialty {
   id: string;
   name: string;
   description: string;
+}
+
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  city: string;
+  state: string;
+  country: string;
+  address: string;
 }
 
 interface SpecialistFinderProps {
@@ -55,12 +75,17 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [experienceFilter, setExperienceFilter] = useState<string>('all');
+  const [maxDistance, setMaxDistance] = useState<string>('50');
+  const [sortBy, setSortBy] = useState<string>('distance');
   const [loading, setLoading] = useState(true);
+  const [userLocation, setUserLocation] = useState<LocationData | null>(null);
+  
   const { toast } = useToast();
+  const { calculateDistance, getCurrentLocation } = useLocationService();
 
   useEffect(() => {
     fetchSpecialties();
-    fetchDoctors();
+    initializeUserLocation();
   }, []);
 
   useEffect(() => {
@@ -77,8 +102,31 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
   }, [specialties, recommendedSpecialty]);
 
   useEffect(() => {
+    if (userLocation) {
+      fetchDoctors();
+    }
+  }, [userLocation, selectedSpecialty, maxDistance, sortBy]);
+
+  useEffect(() => {
     filterDoctors();
-  }, [doctors, selectedSpecialty, searchTerm, experienceFilter]);
+  }, [doctors, searchTerm, experienceFilter]);
+
+  const initializeUserLocation = async () => {
+    const location = await getCurrentLocation();
+    if (location) {
+      setUserLocation(location);
+    } else {
+      // Default to New York if location access fails
+      setUserLocation({
+        latitude: 40.7128,
+        longitude: -74.0060,
+        city: 'New York',
+        state: 'NY',
+        country: 'US',
+        address: 'New York, NY, US'
+      });
+    }
+  };
 
   const fetchSpecialties = async () => {
     try {
@@ -95,18 +143,55 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
   };
 
   const fetchDoctors = async () => {
+    if (!userLocation) return;
+    
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('doctors')
         .select(`
           *,
           specialty:specialties(name, description),
           profile:profiles(first_name, last_name, email)
         `)
-        .order('years_of_experience', { ascending: false });
+        .not('latitude', 'is', null)
+        .not('longitude', 'is', null);
+
+      if (selectedSpecialty && selectedSpecialty !== 'all') {
+        query = query.eq('specialty_id', selectedSpecialty);
+      }
+
+      const { data, error } = await query;
       
       if (error) throw error;
-      setDoctors(data || []);
+
+      // Calculate distances and filter by max distance
+      const doctorsWithDistance = (data || [])
+        .map(doctor => ({
+          ...doctor,
+          distance: calculateDistance(
+            userLocation.latitude,
+            userLocation.longitude,
+            doctor.latitude,
+            doctor.longitude
+          )
+        }))
+        .filter(doctor => doctor.distance <= parseFloat(maxDistance))
+        .sort((a, b) => {
+          switch (sortBy) {
+            case 'distance':
+              return a.distance - b.distance;
+            case 'experience':
+              return (b.years_of_experience || 0) - (a.years_of_experience || 0);
+            case 'name':
+              return `${a.profile?.first_name} ${a.profile?.last_name}`.localeCompare(
+                `${b.profile?.first_name} ${b.profile?.last_name}`
+              );
+            default:
+              return a.distance - b.distance;
+          }
+        });
+
+      setDoctors(doctorsWithDistance);
     } catch (error) {
       console.error('Error fetching doctors:', error);
     } finally {
@@ -117,16 +202,12 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
   const filterDoctors = () => {
     let filtered = [...doctors];
 
-    // Filter by specialty
-    if (selectedSpecialty && selectedSpecialty !== 'all') {
-      filtered = filtered.filter(doctor => doctor.specialty_id === selectedSpecialty);
-    }
-
     // Filter by search term
     if (searchTerm) {
       filtered = filtered.filter(doctor => 
         `${doctor.profile?.first_name} ${doctor.profile?.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doctor.specialty?.name.toLowerCase().includes(searchTerm.toLowerCase())
+        doctor.specialty?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        `${doctor.city}, ${doctor.state}`.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -137,6 +218,14 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
     }
 
     setFilteredDoctors(filtered);
+  };
+
+  const handleLocationChange = (location: LocationData) => {
+    setUserLocation(location);
+    toast({
+      title: "Location updated",
+      description: `Searching for specialists near ${location.city}, ${location.state}`,
+    });
   };
 
   const handleBookAppointment = (doctor: Doctor) => {
@@ -212,14 +301,22 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
             Filter Specialists
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid md:grid-cols-3 gap-4">
+        <CardContent className="space-y-4">
+          {/* Location Picker */}
+          <LocationPicker
+            onLocationSelect={handleLocationChange}
+            initialLocation={userLocation}
+            label="Search Location"
+            placeholder="Enter city, state, or address to find nearby specialists"
+          />
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium mb-2">Search</label>
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="Search by name or specialty..."
+                  placeholder="Search by name, specialty, or location..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -259,6 +356,38 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
                 </SelectContent>
               </Select>
             </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Distance</label>
+              <Select value={maxDistance} onValueChange={setMaxDistance}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Distance" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">Within 10 miles</SelectItem>
+                  <SelectItem value="25">Within 25 miles</SelectItem>
+                  <SelectItem value="50">Within 50 miles</SelectItem>
+                  <SelectItem value="100">Within 100 miles</SelectItem>
+                  <SelectItem value="500">Any distance</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Sort By</label>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="distance">Distance</SelectItem>
+                  <SelectItem value="experience">Experience</SelectItem>
+                  <SelectItem value="name">Name</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -267,6 +396,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
       <div className="flex items-center justify-between">
         <p className="text-gray-600">
           Found {filteredDoctors.length} specialist{filteredDoctors.length !== 1 ? 's' : ''}
+          {userLocation && ` near ${userLocation.city}, ${userLocation.state}`}
           {selectedSpecialty && selectedSpecialty !== 'all' && specialties.find(s => s.id === selectedSpecialty) && 
             ` in ${specialties.find(s => s.id === selectedSpecialty)?.name}`
           }
@@ -280,13 +410,14 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
             <Stethoscope className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No specialists found</h3>
             <p className="text-gray-600 mb-4">
-              Try adjusting your search criteria or browse all available specialists.
+              Try adjusting your search criteria or expanding your search distance.
             </p>
             <Button 
               onClick={() => {
                 setSelectedSpecialty('all');
                 setSearchTerm('');
                 setExperienceFilter('all');
+                setMaxDistance('100');
               }}
               variant="outline"
             >
@@ -335,8 +466,15 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
                   <div className="space-y-2 text-sm text-gray-500">
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4" />
-                      <span>Available for consultation</span>
+                      <span>{doctor.city}, {doctor.state}</span>
                     </div>
+
+                    {doctor.distance && (
+                      <div className="flex items-center gap-2">
+                        <Navigation className="w-4 h-4" />
+                        <span>{doctor.distance.toFixed(1)} miles away</span>
+                      </div>
+                    )}
                     
                     <div className="flex items-center gap-2">
                       <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />

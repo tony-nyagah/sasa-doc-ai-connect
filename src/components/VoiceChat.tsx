@@ -106,16 +106,27 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
 
       if (error) {
         console.error('Transcription error:', error);
-        throw error;
+        throw new Error('Speech recognition service is temporarily unavailable. Please try typing instead.');
       }
 
       console.log('Transcription response:', data);
 
-      if (data && data.isLoading) {
+      if (data && data.isConfigurationError) {
         setIsModelLoading(true);
         toast({
-          title: "Model Loading",
-          description: "Speech recognition is starting up. Please try again in a moment.",
+          title: "Service Unavailable",
+          description: "Speech recognition is not configured. Please type your symptoms instead.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (data && data.isTemporaryError) {
+        setIsModelLoading(true);
+        toast({
+          title: "Service Temporarily Unavailable",
+          description: "Speech recognition is temporarily down. Please try again later or type your symptoms.",
+          variant: "destructive"
         });
         return;
       }
@@ -135,7 +146,7 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
           throw new Error('No speech detected. Please try speaking more clearly.');
         }
       } else {
-        throw new Error(data?.error || 'Could not process speech. Please try typing instead.');
+        throw new Error('Could not process speech. Please try typing instead.');
       }
     } catch (error) {
       console.error('Audio processing error:', error);
@@ -146,8 +157,8 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
         errorMessage = "Recording too short. Please speak for at least 2 seconds.";
       } else if (error.message?.includes('No speech detected')) {
         errorMessage = "No speech detected. Please speak more clearly and try again.";
-      } else if (error.message?.includes('loading')) {
-        errorMessage = "Speech recognition is loading. Please wait and try again.";
+      } else if (error.message?.includes('temporarily unavailable')) {
+        errorMessage = "Speech recognition is temporarily unavailable. Please type your symptoms instead.";
         setIsModelLoading(true);
       }
       
@@ -207,7 +218,7 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
           <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
             <div className="flex items-center text-yellow-800">
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              <span className="text-sm">Speech model is loading. This may take a few moments...</span>
+              <span className="text-sm">Speech service is temporarily unavailable. Please type your symptoms instead.</span>
             </div>
             <Button 
               onClick={retryRecording}
@@ -266,7 +277,7 @@ const VoiceChat = ({ onTranscription }: VoiceChatProps) => {
           <p>• Speak clearly and loudly for best results</p>
           <p>• If voice doesn't work, you can type your symptoms instead</p>
           {isModelLoading && (
-            <p className="text-yellow-600">• Speech model is initializing, please wait...</p>
+            <p className="text-yellow-600">• Speech service is temporarily unavailable</p>
           )}
         </div>
 
