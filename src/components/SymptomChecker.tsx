@@ -31,8 +31,9 @@ const SymptomChecker = () => {
   const [showSpecialistFinder, setShowSpecialistFinder] = useState(false);
   const { user } = useAuth();
 
-  const handleAnalyze = async () => {
-    if (!symptoms.trim()) {
+  const handleAnalyze = async (symptomsToAnalyze?: string) => {
+    const textToAnalyze = symptomsToAnalyze || symptoms;
+    if (!textToAnalyze.trim()) {
       setError('Please describe your symptoms');
       return;
     }
@@ -42,7 +43,7 @@ const SymptomChecker = () => {
     
     try {
       const { data, error: functionError } = await supabase.functions.invoke('analyze-symptoms', {
-        body: { symptoms, userType: 'patient' }
+        body: { symptoms: textToAnalyze, userType: 'patient' }
       });
 
       if (functionError) throw functionError;
@@ -58,6 +59,9 @@ const SymptomChecker = () => {
 
   const handleVoiceTranscription = (transcribedText: string) => {
     setSymptoms(transcribedText);
+    if (transcribedText.trim()) {
+      handleAnalyze(transcribedText);
+    }
   };
 
   const handleFindSpecialists = () => {
@@ -129,7 +133,7 @@ const SymptomChecker = () => {
             )}
 
             <Button 
-              onClick={handleAnalyze}
+              onClick={() => handleAnalyze()}
               disabled={loading || !symptoms.trim()}
               className="w-full medical-gradient text-white"
             >
