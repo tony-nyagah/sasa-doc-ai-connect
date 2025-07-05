@@ -110,8 +110,8 @@ const DoctorFinder = () => {
         .from('doctors')
         .select(`
           *,
-          specialty:specialties(name, description),
-          profile:profiles(first_name, last_name)
+          specialty:specialties!inner(name, description),
+          profile:profiles!inner(first_name, last_name)
         `)
         .not('latitude', 'is', null)
         .not('longitude', 'is', null);
@@ -122,7 +122,12 @@ const DoctorFinder = () => {
 
       const { data, error } = await query;
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Fetched doctors data:', data);
 
       // Calculate distances and filter by max distance
       const doctorsWithDistance = (data || [])
@@ -151,6 +156,7 @@ const DoctorFinder = () => {
           }
         });
 
+      console.log('Processed doctors with distance:', doctorsWithDistance);
       setDoctors(doctorsWithDistance);
     } catch (error) {
       console.error('Error fetching doctors:', error);

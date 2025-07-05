@@ -72,7 +72,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [filteredDoctors, setFilteredDoctors] = useState<Doctor[]>([]);
-  const [selectedSpecialty, setSelectedSpecialty] = useState<string>('all');
+  const [selectedSpecialty, setSelectedSpecialty] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [experienceFilter, setExperienceFilter] = useState<string>('all');
   const [maxDistance, setMaxDistance] = useState<string>('50');
@@ -150,8 +150,8 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
         .from('doctors')
         .select(`
           *,
-          specialty:specialties(name, description),
-          profile:profiles(first_name, last_name, email)
+          specialty:specialties!inner(name, description),
+          profile:profiles!inner(first_name, last_name, email)
         `)
         .not('latitude', 'is', null)
         .not('longitude', 'is', null);
@@ -162,7 +162,12 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
 
       const { data, error } = await query;
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Fetched specialists data:', data);
 
       // Calculate distances and filter by max distance
       const doctorsWithDistance = (data || [])
@@ -191,9 +196,15 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
           }
         });
 
+      console.log('Processed specialists with distance:', doctorsWithDistance);
       setDoctors(doctorsWithDistance);
     } catch (error) {
       console.error('Error fetching doctors:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load specialists. Please try again.",
+        variant: "destructive"
+      });
     } finally {
       setLoading(false);
     }
@@ -331,7 +342,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
                   <SelectValue placeholder="All specialties" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Specialties</SelectItem>
+                  <SelectItem value="">All Specialties</SelectItem>
                   {specialties.map((specialty) => (
                     <SelectItem key={specialty.id} value={specialty.id}>
                       {specialty.name}
@@ -397,7 +408,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
         <p className="text-gray-600">
           Found {filteredDoctors.length} specialist{filteredDoctors.length !== 1 ? 's' : ''}
           {userLocation && ` near ${userLocation.city}, ${userLocation.state}`}
-          {selectedSpecialty && selectedSpecialty !== 'all' && specialties.find(s => s.id === selectedSpecialty) && 
+          {selectedSpecialty && specialties.find(s => s.id === selectedSpecialty) && 
             ` in ${specialties.find(s => s.id === selectedSpecialty)?.name}`
           }
         </p>
@@ -414,7 +425,7 @@ const SpecialistFinder = ({ recommendedSpecialty, symptoms, analysis, onBack }: 
             </p>
             <Button 
               onClick={() => {
-                setSelectedSpecialty('all');
+                setSelectedSpecialty('');
                 setSearchTerm('');
                 setExperienceFilter('all');
                 setMaxDistance('100');
