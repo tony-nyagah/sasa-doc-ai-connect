@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -8,22 +7,50 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { User, Mail, Lock, UserPlus, LogIn } from 'lucide-react';
+import { User, Mail, Lock, UserPlus, LogIn, Stethoscope } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useEffect } from 'react';
+
+interface Specialty {
+  id: string;
+  name: string;
+  description: string;
+}
 
 const Auth = () => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     firstName: '',
     lastName: '',
-    userType: '' as 'doctor' | 'patient' | ''
+    userType: '' as 'doctor' | 'patient' | '',
+    specialtyId: ''
   });
 
   const { signUp, signIn } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchSpecialties();
+  }, []);
+
+  const fetchSpecialties = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('specialties')
+        .select('*')
+        .order('name');
+      
+      if (error) throw error;
+      setSpecialties(data || []);
+    } catch (error) {
+      console.error('Error fetching specialties:', error);
+    }
+  };
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -44,12 +71,22 @@ const Auth = () => {
           return;
         }
 
+        if (formData.userType === 'doctor' && !formData.specialtyId) {
+          toast({
+            title: "Error",
+            description: "Please select a specialty for doctor registration",
+            variant: "destructive"
+          });
+          return;
+        }
+
         const { error } = await signUp(
           formData.email,
           formData.password,
           formData.firstName,
           formData.lastName,
-          formData.userType
+          formData.userType,
+          formData.specialtyId
         );
 
         if (error) {
@@ -177,6 +214,38 @@ const Auth = () => {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {formData.userType === 'doctor' && (
+                    <div>
+                      <Label htmlFor="specialty">Medical Specialty</Label>
+                      <Select
+                        value={formData.specialtyId}
+                        onValueChange={(value) => handleInputChange('specialtyId', value)}
+                        required
+                        disabled={loading}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select your specialty" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {specialties.map((specialty) => (
+                            <SelectItem key={specialty.id} value={specialty.id}>
+                              <div className="flex items-center">
+                                <Stethoscope className="w-4 h-4 mr-2 text-medical-primary" />
+                                <div>
+                                  <div className="font-medium">{specialty.name}</div>
+                                  <div className="text-xs text-gray-500">{specialty.description}</div>
+                                </div>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        This helps patients find the right specialist for their condition
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
 

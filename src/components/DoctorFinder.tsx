@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,6 +11,7 @@ interface Doctor {
   user_id: string;
   license_number: string;
   years_of_experience: number;
+  specialty_id: string;
   specialty: {
     name: string;
     description: string;

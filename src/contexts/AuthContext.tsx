@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
@@ -7,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string, firstName: string, lastName: string, userType: 'doctor' | 'patient') => Promise<{ error: any }>;
+  signUp: (email: string, password: string, firstName: string, lastName: string, userType: 'doctor' | 'patient', specialtyId?: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 }
@@ -30,9 +29,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
+        
+        // If user just signed up and is a doctor, create doctor profile
+        if (event === 'SIGNED_UP' && session?.user) {
+          const userType = session.user.user_metadata?.user_type;
+          const specialtyId = session.user.user_metadata?.specialty_id;
+          
+          if (userType === 'doctor' && specialtyId) {
+            try {
+              // Wait a bit for the profile to be created by the trigger
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              // Create doctor profile
+              const { error: doctorError } = await supabase
+                .from('doctors')
+                .insert({
+                  user_id: session.user.id,
+                  specialty_id: specialtyId,
+                  years_of_experience: 0 // Default value, can be updated later
+                });
+              
+              if (doctorError) {
+                console.error('Error creating doctor profile:', doctorError);
+              }
+            } catch (error) {
+              console.error('Error in doctor profile creation:', error);
+            }
+          } else if (userType === 'patient') {
+            try {
+              // Wait a bit for the profile to be created by the trigger
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              // Create patient profile
+              const { error: patientError } = await supabase
+                .from('patients')
+                .insert({
+                  user_id: session.user.id
+                });
+              
+              if (patientError) {
+                console.error('Error creating patient profile:', patientError);
+              }
+            } catch (error) {
+              console.error('Error in patient profile creation:', error);
+            }
+          }
+        }
+        
         setLoading(false);
       }
     );
@@ -47,19 +93,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, firstName: string, lastName: string, userType: 'doctor' | 'patient') => {
+  const signUp = async (email: string, password: string, firstName: string, lastName: string, userType: 'doctor' | 'patient', specialtyId?: string) => {
     const redirectUrl = `${window.location.origin}/`;
+    
+    const userData: any = {
+      first_name: firstName,
+      last_name: lastName,
+      user_type: userType
+    };
+
+    // Add specialty_id for doctors
+    if (userType === 'doctor' && specialtyId) {
+      userData.specialty_id = specialtyId;
+    }
     
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: redirectUrl,
-        data: {
-          first_name: firstName,
-          last_name: lastName,
-          user_type: userType
-        }
+        data: userData
       }
     });
     
