@@ -1,8 +1,10 @@
-
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Shield, Clock, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const HeroSection = () => {
+  const navigate = useNavigate();
+
   return (
     <section className="relative bg-gradient-to-br from-medical-light to-medical-secondary py-20 lg:py-32">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -19,11 +21,18 @@ const HeroSection = () => {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 mb-12">
-              <Button className="medical-gradient text-white text-lg px-8 py-4 hover:opacity-90 group">
+              <Button 
+                className="medical-gradient text-white text-lg px-8 py-4 hover:opacity-90 group"
+                onClick={() => navigate('/sasadoc')}
+              >
                 Get Started Today
                 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
               </Button>
-              <Button variant="outline" className="text-lg px-8 py-4 border-medical-primary text-medical-primary hover:bg-medical-secondary">
+              <Button 
+                variant="outline" 
+                className="text-lg px-8 py-4 border-medical-primary text-medical-primary hover:bg-medical-secondary"
+                onClick={() => navigate('/about')}
+              >
                 Learn More
               </Button>
             </div>
@@ -76,10 +85,16 @@ const HeroSection = () => {
                   </div>
                   
                   <div className="flex space-x-3">
-                    <Button className="flex-1 bg-medical-primary text-white hover:bg-medical-dark">
+                    <Button 
+                      className="flex-1 bg-medical-primary text-white hover:bg-medical-dark"
+                      onClick={() => navigate('/sasadoc/symptoms-checker')}
+                    >
                       Symptoms Checker
                     </Button>
-                    <Button className="flex-1 bg-medical-accent text-white hover:opacity-90">
+                    <Button 
+                      className="flex-1 bg-medical-accent text-white hover:opacity-90"
+                      onClick={() => navigate('/sasadoc/appointment-booking')}
+                    >
                       Find Doctors
                     </Button>
                   </div>
