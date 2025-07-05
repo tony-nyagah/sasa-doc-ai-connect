@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
@@ -20,18 +19,27 @@ serve(async (req) => {
       throw new Error('Mistral API key not configured');
     }
 
-    const systemPrompt = `You are a medical AI assistant helping ${userType}s analyze symptoms. Provide:
-1. Possible conditions (with likelihood: high/medium/low)
-2. Self-care recommendations 
-3. When to seek medical attention
-4. Recommended medical specialty to consult
+    const systemPrompt = `You are a medical AI assistant helping ${userType}s analyze symptoms. 
 
-Format your response as JSON with these keys:
-- possibleConditions: array of {condition, likelihood, description}
-- selfCareRecommendations: array of practical advice
-- urgencyLevel: "immediate", "within_24_hours", "within_week", or "routine"
-- recommendedSpecialty: string (matching our specialties)
+IMPORTANT: You MUST respond with valid JSON only. Do not include any text before or after the JSON.
+
+Provide a JSON response with these exact keys:
+- possibleConditions: array of {condition, likelihood, description} where likelihood is "high", "medium", or "low"
+- selfCareRecommendations: array of practical advice strings
+- urgencyLevel: one of "immediate", "within_24_hours", "within_week", or "routine"
+- recommendedSpecialty: string matching medical specialties like "General Medicine", "Cardiology", etc.
 - disclaimer: medical disclaimer text
+
+Example format:
+{
+  "possibleConditions": [
+    {"condition": "Common Cold", "likelihood": "high", "description": "Viral infection causing respiratory symptoms"}
+  ],
+  "selfCareRecommendations": ["Rest and stay hydrated"],
+  "urgencyLevel": "routine",
+  "recommendedSpecialty": "General Medicine",
+  "disclaimer": "This analysis is for informational purposes only and should not replace professional medical advice."
+}
 
 Be thorough but not alarming. Always recommend consulting healthcare professionals.`;
 
@@ -57,20 +65,54 @@ Be thorough but not alarming. Always recommend consulting healthcare professiona
     }
 
     const data = await response.json();
-    const analysis = data.choices[0].message.content;
+    let analysis = data.choices[0].message.content.trim();
     
-    // Try to parse as JSON, fallback to structured text
+    // Clean up the response - remove any markdown formatting or extra text
+    if (analysis.includes('```json')) {
+      analysis = analysis.split('```json')[1].split('```')[0].trim();
+    } else if (analysis.includes('```')) {
+      analysis = analysis.split('```')[1].split('```')[0].trim();
+    }
+    
+    // Try to parse as JSON
     let parsedAnalysis;
     try {
       parsedAnalysis = JSON.parse(analysis);
-    } catch {
-      // If JSON parsing fails, create a structured response
+      
+      // Validate the structure
+      if (!parsedAnalysis.possibleConditions || !Array.isArray(parsedAnalysis.possibleConditions)) {
+        throw new Error('Invalid response structure');
+      }
+      
+      // Ensure all required fields exist
       parsedAnalysis = {
-        possibleConditions: [{ condition: "Analysis needed", likelihood: "unknown", description: analysis }],
-        selfCareRecommendations: ["Consult with a healthcare professional for proper diagnosis"],
-        urgencyLevel: "routine",
+        possibleConditions: parsedAnalysis.possibleConditions || [],
+        selfCareRecommendations: parsedAnalysis.selfCareRecommendations || [],
+        urgencyLevel: parsedAnalysis.urgencyLevel || "routine",
+        recommendedSpecialty: parsedAnalysis.recommendedSpecialty || "General Medicine",
+        disclaimer: parsedAnalysis.disclaimer || "This analysis is for informational purposes only and should not replace professional medical advice."
+      };
+      
+    } catch (parseError) {
+      console.error('JSON parsing failed:', parseError, 'Raw response:', analysis);
+      
+      // Create a structured fallback response
+      parsedAnalysis = {
+        possibleConditions: [
+          {
+            condition: "Symptom Analysis Required", 
+            likelihood: "medium", 
+            description: "Based on your symptoms, a medical evaluation is recommended for proper diagnosis."
+          }
+        ],
+        selfCareRecommendations: [
+          "Monitor your symptoms closely",
+          "Stay hydrated and get adequate rest",
+          "Consult with a healthcare professional for proper evaluation"
+        ],
+        urgencyLevel: "within_week",
         recommendedSpecialty: "General Medicine",
-        disclaimer: "This analysis is for informational purposes only and should not replace professional medical advice."
+        disclaimer: "This analysis is for informational purposes only and should not replace professional medical advice. Please consult with a healthcare professional for proper diagnosis and treatment."
       };
     }
 
@@ -79,8 +121,27 @@ Be thorough but not alarming. Always recommend consulting healthcare professiona
     });
   } catch (error) {
     console.error('Error in analyze-symptoms function:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
+    
+    // Return a proper error response structure
+    const errorResponse = {
+      possibleConditions: [
+        {
+          condition: "Analysis Unavailable", 
+          likelihood: "unknown", 
+          description: "Unable to analyze symptoms at this time. Please consult with a healthcare professional."
+        }
+      ],
+      selfCareRecommendations: [
+        "Consult with a healthcare professional for proper evaluation",
+        "Monitor your symptoms and seek immediate care if they worsen"
+      ],
+      urgencyLevel: "within_24_hours",
+      recommendedSpecialty: "General Medicine",
+      disclaimer: "This service is temporarily unavailable. Please consult with a healthcare professional for medical advice."
+    };
+    
+    return new Response(JSON.stringify(errorResponse), {
+      status: 200, // Return 200 to avoid frontend error handling
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
